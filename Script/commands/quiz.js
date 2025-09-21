@@ -1,102 +1,125 @@
-const fs = require("fs");
-const path = __dirname + "/quizData.json"; // কুইজ JSON ফাইল
-const moneyPath = __dirname + "/moneyData.json"; // ইউজারের টাকা JSON
+const axios = require("axios");
 
 module.exports.config = {
-    name: "quiz",
-    version: "1.0.1",
-    hasPermssion: 0,
-    credits: "Mohammad Akash",
-    description: "কুইজ খেলো এবং টাকা জিতে যাও",
-    commandCategory: "game",
-    usages: "/quiz",
-    cooldowns: 2
+ name: "quiz",
+ version: "2.3.0",
+ hasPermssion: 0,
+ credits: "MAHBUBU ULLASH × RUBISH API",
+ description: "Bangla Quiz with Coins System",
+ usePrefix: false,
+ commandCategory: "Game",
+ usages: "quiz [h]",
+ cooldowns: 5,
+ dependencies: { "axios": "" }
 };
 
-// কুইজ ডাটা লোড
-function loadQuiz() {
-    if (!fs.existsSync(path)) fs.writeFileSync(path, JSON.stringify([]));
-    return JSON.parse(fs.readFileSync(path));
-}
+const timeoutDuration = 20 * 1000;
 
-// ইউজার ডাটা লোড
-function loadData() {
-    if (!fs.existsSync(moneyPath)) fs.writeFileSync(moneyPath, JSON.stringify({}));
-    return JSON.parse(fs.readFileSync(moneyPath));
-}
-function saveData(data) {
-    fs.writeFileSync(moneyPath, JSON.stringify(data, null, 2));
-}
+module.exports.run = async function ({ api, event, args, Currencies }) {
+ const { threadID, messageID, senderID } = event;
+ const { getData } = Currencies;
 
-module.exports.run = async function({ api, event }) {
-    const { senderID, threadID } = event;
+ const userData = await getData(senderID);
+ const balance = userData.money || 0;
 
-    let data = loadData();
-    if (!data[senderID]) data[senderID] = { balance: 0 };
+ if (balance < 30) {
+ return api.sendMessage("❌ You don't have enough Coins to play! Minimum 30 Coins required.", threadID, messageID);
+ }
 
-    const quizzes = loadQuiz();
-    if (quizzes.length === 0) return api.sendMessage("কোনো কুইজ নেই এখন 😢", threadID);
+ if (args[0]?.toLowerCase() === "h") {
+ return api.sendMessage(
+ `🧠 Quiz Guide:\n\n` +
+ `➤ Command: quiz\n` +
+ `➤ Correct Answer: +500 Coins\n` +
+ `➤ Wrong Answer: -20 Coins\n` +
+ `➤ Minimum 30 Coins required to play\n` +
+ `➤ 20 seconds to answer\n\n` +
+ `⚡ Good Luck!`, threadID, messageID
+ );
+ }
 
-    // র্যান্ডম কুইজ
-    const randomQuiz = quizzes[Math.floor(Math.random() * quizzes.length)];
+ try {
+ const res = await axios.get(`https://rubish-apihub.onrender.com/rubish/quiz-api?category=Bangla&apikey=rubish69`);
+ const data = res.data;
 
-    const quizMsg = `❓ কুইজ: ${randomQuiz.question}\n\n` +
-                    `A) ${randomQuiz.a}\n` +
-                    `B) ${randomQuiz.b}\n` +
-                    `C) ${randomQuiz.c}\n` +
-                    `D) ${randomQuiz.d}\n\n` +
-                    `Reply এই মেসেজের সাথে শুধু A, B, C বা D লিখে পাঠাও।`;
+ if (!data.question || !data.answer) throw new Error("Invalid quiz data");
 
-    api.sendMessage(quizMsg, threadID, (err, info) => {
-        global.GoatBot.onReply.set(info.messageID, {
-            type: "quiz",
-            author: senderID,
-            messageID: info.messageID,
-            correctAnswer: randomQuiz.answer.toUpperCase(), // A, B, C, D
-            attempts: 0
-        });
-    });
+ const formatted = 
+`╭──✦ ${data.question}
+├‣ 𝗔) ${data.A}
+├‣ 𝗕) ${data.B}
+├‣ 𝗖) ${data.C}
+├‣ 𝗗) ${data.D}
+╰──────────────────‣
+Reply with your answer (A/B/C/D). ⏰ 20s`;
+
+ return api.sendMessage(formatted, threadID, async (err, info) => {
+ if (err) return console.error("Send error:", err);
+
+ const timeout = setTimeout(async () => {
+ const index = global.client.handleReply.findIndex(e => e.messageID === info.messageID);
+ if (index !== -1) {
+ try {
+ await api.unsendMessage(info.messageID);
+ api.sendMessage(`⏰ Time's up!\n✅ The correct answer was: ${data.answer}`, threadID);
+ } catch (e) {
+ console.error("Timeout unsend error:", e);
+ }
+ global.client.handleReply.splice(index, 1);
+ }
+ }, timeoutDuration);
+
+ global.client.handleReply.push({
+ name: this.config.name,
+ messageID: info.messageID,
+ author: senderID,
+ answer: data.answer,
+ timeout
+ });
+ });
+
+ } catch (err) {
+ console.error("API fetch error:", err);
+ return api.sendMessage("❌ Failed to load quiz data!", threadID, messageID);
+ }
 };
 
-// reply হ্যান্ডলিং
-module.exports.onReply = async function({ event, Reply }) {
-    const { senderID, messageID, threadID, body } = event;
+module.exports.handleReply = async function ({ api, event, handleReply, Currencies }) {
+ const { senderID, messageID, threadID, body } = event;
+ const { increaseMoney, decreaseMoney } = Currencies;
 
-    if (!Reply || Reply.type !== "quiz") return;
+ if (senderID !== handleReply.author) return;
 
-    if (senderID !== Reply.author) {
-        return global.GoatBot.api.sendMessage("এই কুইজ তোমার জন্য 😡", threadID, messageID);
-    }
+ const userAnswer = body.trim().toUpperCase(); 
+ if (!["A", "B", "C", "D"].includes(userAnswer)) {
+ return api.sendMessage("⚠️ Please enter a valid option: A, B, C or D", threadID, messageID);
+ }
 
-    Reply.attempts += 1;
-    const userAnswer = body.trim().toUpperCase(); // A, B, C, D
+ clearTimeout(handleReply.timeout);
 
-    if (userAnswer === Reply.correctAnswer) {
-        let data = loadData();
-        data[senderID].balance += 100; // সঠিক হলে ১০০ Coins অ্যাড
-        saveData(data);
+ try {
+ if (userAnswer === handleReply.answer) {
+ await api.unsendMessage(handleReply.messageID);
+ await increaseMoney(senderID, 500);
+ const total = (await Currencies.getData(senderID)).money;
+ return api.sendMessage(
+ `✅ Congratulations! You answered correctly!\n💰 You've earned 500 Coins`,
+ threadID,
+ messageID
+ );
+ } else {
+ await decreaseMoney(senderID, 20);
+ const total = (await Currencies.getData(senderID)).money;
+ return api.sendMessage(
+ `❌ Wrong answer!\n✅ Correct answer: ${handleReply.answer}\n💸 20 Coins deducted`,
+ threadID,
+ messageID
+ );
+ }
+ } catch (e) {
+ console.error("Handle reply error:", e);
+ }
 
-        global.GoatBot.api.sendMessage(
-            `🎉 সঠিক উত্তর! 100 Coins পেয়েছো।\n💰 নতুন বেলেন্স: ${data[senderID].balance}`,
-            threadID,
-            messageID
-        );
-        global.GoatBot.onReply.delete(messageID);
-
-    } else if (Reply.attempts >= 2) {
-        global.GoatBot.api.sendMessage(
-            `❌ ভুল উত্তর। সঠিক উত্তর: ${Reply.correctAnswer}`,
-            threadID,
-            messageID
-        );
-        global.GoatBot.onReply.delete(messageID);
-
-    } else {
-        global.GoatBot.api.sendMessage(
-            `❌ ভুল উত্তর। ১ বার চেষ্টা বাকি। আবার চেষ্টা করো।`,
-            threadID,
-            messageID
-        );
-        global.GoatBot.onReply.set(messageID, Reply);
-    }
+ const index = global.client.handleReply.findIndex(e => e.messageID === handleReply.messageID);
+ if (index !== -1) global.client.handleReply.splice(index, 1);
 };
