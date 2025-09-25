@@ -1,6 +1,6 @@
 module.exports.config = {
   name: "news",
-  version: "1.0.0",
+  version: "1.0.1",
   hasPermssion: 0,
   credits: "Mohammad Akash",
   description: "Breaking News meme generator",
@@ -16,12 +16,7 @@ module.exports.config = {
   }
 };
 
-module.exports.circle = async (imageBuffer) => {
-  const jimp = global.nodemodule.jimp;
-  imageBuffer = await jimp.read(imageBuffer);
-  imageBuffer.circle(); // DP গোল করা
-  return await imageBuffer.getBufferAsync("image/png");
-};
+// ⚠️ আর circle ফাংশন লাগবে না, তাই এটা বাদ দিলাম
 
 module.exports.run = async ({ event, api }) => {
   try {
@@ -38,7 +33,7 @@ module.exports.run = async ({ event, api }) => {
     const canvasObj = canvas.createCanvas(1366, 768);
     const ctx = canvasObj.getContext("2d");
 
-    // টেমপ্লেট লোড (তোমার দেওয়া লিংক)
+    // টেমপ্লেট লোড
     const templateImage = await canvas.loadImage("https://i.imgur.com/3f90Zcy.jpeg");
     ctx.drawImage(templateImage, 0, 0, canvasObj.width, canvasObj.height);
 
@@ -46,14 +41,14 @@ module.exports.run = async ({ event, api }) => {
     let profilePicResponse = await superfetch.get(
       "https://graph.facebook.com/" +
         targetUserId +
-        "/picture?width=512&height=512&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662"
+        "/picture?width=600&height=600&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662"
     );
 
-    // DP গোল করা
-    profilePicResponse = await this.circle(profilePicResponse.body);
+    // চারকোণা করে লোড
+    const profilePic = await canvas.loadImage(profilePicResponse.body);
 
-    // DP বাম পাশে বসানো (x=50, y=120, size=400x400)
-    ctx.drawImage(await canvas.loadImage(profilePicResponse), 50, 120, 400, 400);
+    // DP বাম পাশে বসানো (x=65, y=135, width=350, height=350)
+    ctx.drawImage(profilePic, 65, 135, 350, 350);
 
     // ফাইনাল ইমেজ আউটপুট
     const finalImageBuffer = canvasObj.toBuffer();
